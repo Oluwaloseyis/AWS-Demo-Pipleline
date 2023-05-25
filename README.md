@@ -11,4 +11,8 @@ All relevant files were downloaded to a local folder.
 
 PySpark Dataframes were created using the local files and loaded to the staging schema.
 
+All transformations were deployed as SQL queries. PySpark Dataframes were created using the queries and loaded to the analytics schema.
+
+Files were also exported to a local staging folder for export to AWS S3
+
 
