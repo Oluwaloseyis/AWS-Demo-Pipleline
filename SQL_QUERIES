@@ -1,0 +1,101 @@
+SELECT * FROM oluwseko3351_staging.orders
+
+select * from if_common.dim_dates
+
+select * from if_common.dim_products 
+
+select * from oluwseko3351_staging.reviews
+
+select * from oluwseko3351_staging.shipment_deliveries
+
+
+SELECT count(*) FROM oluwseko3351_staging.orders a, if_common.dim_dates b
+where to_date(a.order_date, 'YYYY-MM-DD') = b.calendar_dt
+
+
+--agg_public_holiday transformation query
+SELECT CURRENT_DATE ingestion_date ,
+SUM(CASE WHEN TO_CHAR(to_date(a.order_date, 'YYYY-MM-DD'), 'Mon') = 'Jan' THEN 1 else 0 end) tt_order_hol_jan,
+SUM(CASE WHEN TO_CHAR(to_date(a.order_date, 'YYYY-MM-DD'), 'Mon') = 'Feb' THEN 1 else 0 end) tt_order_hol_feb,
+SUM(CASE WHEN TO_CHAR(to_date(a.order_date, 'YYYY-MM-DD'), 'Mon') = 'Mar' THEN 1 else 0 end) tt_order_hol_mar,
+SUM(CASE WHEN TO_CHAR(to_date(a.order_date, 'YYYY-MM-DD'), 'Mon') = 'Apr' THEN 1 else 0 end) tt_order_hol_apr,
+SUM(CASE WHEN TO_CHAR(to_date(a.order_date, 'YYYY-MM-DD'), 'Mon') = 'May' THEN 1 else 0 end) tt_order_hol_may,
+SUM(CASE WHEN TO_CHAR(to_date(a.order_date, 'YYYY-MM-DD'), 'Mon') = 'Jun' THEN 1 else 0 end) tt_order_hol_jun,
+SUM(CASE WHEN TO_CHAR(to_date(a.order_date, 'YYYY-MM-DD'), 'Mon') = 'Jul' THEN 1 else 0 end) tt_order_hol_jul,
+SUM(CASE WHEN TO_CHAR(to_date(a.order_date, 'YYYY-MM-DD'), 'Mon') = 'Aug' THEN 1 else 0 end) tt_order_hol_aug,
+SUM(CASE WHEN TO_CHAR(to_date(a.order_date, 'YYYY-MM-DD'), 'Mon') = 'Sep' THEN 1 else 0 end) tt_order_hol_sep,
+SUM(CASE WHEN TO_CHAR(to_date(a.order_date, 'YYYY-MM-DD'), 'Mon') = 'Oct' THEN 1 else 0 end) tt_order_hol_oct,
+SUM(CASE WHEN TO_CHAR(to_date(a.order_date, 'YYYY-MM-DD'), 'Mon') = 'Nov' THEN 1 else 0 end) tt_order_hol_nov,
+SUM(CASE WHEN TO_CHAR(to_date(a.order_date, 'YYYY-MM-DD'), 'Mon') = 'Dec' THEN 1 else 0 end) tt_order_hol_dec
+FROM oluwseko3351_staging.orders a, if_common.dim_dates b
+where to_date(a.order_date, 'YYYY-MM-DD') = b.calendar_dt and day_of_the_week_num between 1 and 5 and working_day is false
+GROUP BY CURRENT_DATE
+
+select * from oluwseko3351_analytics.agg_public_holiday
+
+
+--agg_shipments transformation query
+select CURRENT_DATE, 
+(select COUNT(*)FROM oluwseko3351_staging.orders a, oluwseko3351_staging.shipment_deliveries b
+where a.order_id = b.order_id and to_date(b.shipment_date, 'YYYY-MM-DD') >= to_date(a.order_date, 'YYYY-MM-DD') +6
+and delivery_date is NULL) tt_late_shipments,
+(select COUNT(*) FROM oluwseko3351_staging.orders a, oluwseko3351_staging.shipment_deliveries b
+where a.order_id = b.order_id and CURRENT_DATE >= to_date(a.order_date, 'YYYY-MM-DD') +15
+and delivery_date is NULL and b.shipment_date is NULL) tt_undelivered_items
+
+select * from oluwseko3351_analytics.agg_shipments
+
+
+--best_performing_product transformation query
+select CURRENT_DATE ingestion_date,
+(select product_name from if_common.dim_products a where product_id =
+(select product_id from (select product_id, count(*) FROM oluwseko3351_staging.reviews group by product_id order by 2 desc
+LIMIT 1) foo)::INTEGER) product_name,
+(select order_date from 
+(select to_date(a.order_date, 'YYYY-MM-DD') order_date, count(*) count FROM oluwseko3351_staging.orders a where product_id =
+(select product_id from (select product_id, count(*) FROM oluwseko3351_staging.reviews group by product_id order by 2 desc
+LIMIT 1) foo) group by to_date(a.order_date, 'YYYY-MM-DD') order by 2 desc LIMIT 1)foo) most_ordered_day,
+(select CASE WHEN day_of_the_week_num between 1 and 5 and working_day is false THEN true else false end as is_public_holiday 
+from if_common.dim_dates where calendar_dt = (select order_date from 
+(select to_date(a.order_date, 'YYYY-MM-DD') order_date, count(*) count FROM oluwseko3351_staging.orders a where product_id =
+(select product_id from (select product_id, count(*) FROM oluwseko3351_staging.reviews group by product_id order by 2 desc
+LIMIT 1) foo) group by to_date(a.order_date, 'YYYY-MM-DD') order by 2 desc LIMIT 1)foo)) is_public_holiday,
+(select sum from (select product_id, count(*) COUNT, SUM(review::INTEGER) SUM FROM oluwseko3351_staging.reviews group by product_id order by 2 desc
+LIMIT 1) foo) tt_review_points,
+(select pct_one_star_review from( 
+select product_id, count(*) count, 
+(sum(case when review = '1' then 1 else 0 end)::decimal /count(*)::decimal )*100 pct_one_star_review
+FROM oluwseko3351_staging.reviews group by product_id order by 2 desc
+LIMIT 1) foo) pct_one_star_review,
+(select pct_two_star_review from( 
+select product_id, count(*) count, 
+(sum(case when review = '2' then 1 else 0 end)::decimal /count(*)::decimal )*100 pct_two_star_review
+FROM oluwseko3351_staging.reviews group by product_id order by 2 desc
+LIMIT 1) foo) pct_two_star_review,
+(select pct_three_star_review from( 
+select product_id, count(*) count, 
+(sum(case when review = '3' then 1 else 0 end)::decimal /count(*)::decimal )*100 pct_three_star_review
+FROM oluwseko3351_staging.reviews group by product_id order by 2 desc
+LIMIT 1) foo) pct_three_star_review,
+(select pct_four_star_review from( 
+select product_id, count(*) count, 
+(sum(case when review = '4' then 1 else 0 end)::decimal /count(*)::decimal )*100 pct_four_star_review
+FROM oluwseko3351_staging.reviews group by product_id order by 2 desc
+LIMIT 1) foo) pct_four_star_review,
+(select pct_five_star_review from( 
+select product_id, count(*) count, 
+(sum(case when review = '3' then 1 else 0 end)::decimal /count(*)::decimal )*100 pct_five_star_review
+FROM oluwseko3351_staging.reviews group by product_id order by 2 desc
+LIMIT 1) foo) pct_five_star_review,
+(SELECT ((select COUNT(*)FROM oluwseko3351_staging.orders a, oluwseko3351_staging.shipment_deliveries b
+where product_id =(select product_id from (select product_id, count(*) FROM oluwseko3351_staging.reviews group by product_id order by 2 desc
+LIMIT 1) foo)  and a.order_id = b.order_id and to_date(b.shipment_date, 'YYYY-MM-DD') < to_date(a.order_date, 'YYYY-MM-DD') +6
+and delivery_date is NOT NULL)::decimal/(select COUNT(*)FROM oluwseko3351_staging.orders where product_id = (select product_id from (select product_id, count(*) FROM oluwseko3351_staging.reviews group by product_id order by 2 desc
+LIMIT 1) foo))::decimal) * 100) pct_early_shipments,
+(SELECT ((select COUNT(*)FROM oluwseko3351_staging.orders a, oluwseko3351_staging.shipment_deliveries b
+where product_id =(select product_id from (select product_id, count(*) FROM oluwseko3351_staging.reviews group by product_id order by 2 desc
+LIMIT 1) foo)  and a.order_id = b.order_id and to_date(b.shipment_date, 'YYYY-MM-DD') >= to_date(a.order_date, 'YYYY-MM-DD') +6
+and delivery_date is NULL)::decimal/(select COUNT(*)FROM oluwseko3351_staging.orders where product_id = (select product_id from (select product_id, count(*) FROM oluwseko3351_staging.reviews group by product_id order by 2 desc
+LIMIT 1) foo))::decimal) * 100) pct_late_shipments
+
+select * from oluwseko3351_analytics.best_performing_product
