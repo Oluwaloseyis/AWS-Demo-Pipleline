@@ -1,7 +1,6 @@
-# Data2Bots_Assessment
-This Repo is assigned to manage codes used to complete Data2Bots Data Engineer Assessment
-
-Boto3 and Pyspark was used to complete assessment
+# Demo AWS Data Pipeline
+This Repo is assigned to manage codes used to complete this pipeline
+Boto3 and Pyspark was used to complete pipeline
 
 All codes were deployed locally using Jupyter Notebook. See ipynb file uploaded to repo.
 
